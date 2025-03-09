@@ -1,0 +1,22 @@
+cookie:
+  expiry_days: 30
+  key: Ramc@1803
+  name: blog_generator_auth
+credentials:
+  usernames:
+    doli365:
+      email: ramgamingyt0429@gmail.com
+      first_name: Malloju
+      last_name: Ramu
+      logged_in: false
+      password: $2b$12$URoM7EXrBOy3f2tLB8KJZOBuiKUZL9TNpX0LtsgJgMtb/ZqOHXftK
+      password_hint: number
+      roles: null
+    jsmith:
+      email: jsmith@gmail.com
+      name: John Smith
+      password: $2b$12$tLqfsYSfJY1qh3FrKoGY6eYFuLvlk.mocDyJhXNSL9aQvY9ZPkFUG
+    rbriggs:
+      email: rbriggs@gmail.com
+      name: Rebecca Briggs
+      password: $2b$12$2tREiA0RTrhNv7o0PnMI2.4SqRrp2NVfsXd1fMkg5bROss6hyGJJy
