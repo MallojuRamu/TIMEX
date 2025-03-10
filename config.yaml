@@ -20,3 +20,11 @@ credentials:
       email: rbriggs@gmail.com
       name: Rebecca Briggs
       password: $2b$12$2tREiA0RTrhNv7o0PnMI2.4SqRrp2NVfsXd1fMkg5bROss6hyGJJy
+    yash:
+      email: yashwanth@gmail.com
+      first_name: Yashwanth
+      last_name: Bethi
+      logged_in: false
+      password: $2b$12$c365zYEZ11M18tUBBH/VPun1mGHlD/FFSUOVn2FjcisnJXMwqPO2S
+      password_hint: dfjsf
+      roles: null
