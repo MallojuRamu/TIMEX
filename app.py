@@ -15,6 +15,8 @@ from yaml.loader import SafeLoader
 import streamlit_authenticator as stauth
 import time
 from twilio.rest import Client
+import urllib.parse  # For URL encoding the email body
+import json  # For proper JavaScript string escaping
 
 # Set page config as the FIRST Streamlit command
 st.set_page_config(page_title="Blog Generator", page_icon="📝", layout="wide")
@@ -31,7 +33,12 @@ TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 USER_PHONE_NUMBER = os.getenv("USER_PHONE_NUMBER")
 
 # Initialize the Gemini model
-model = genai.GenerativeModel("gemini-2.0-flash")
+# Note: "gemini-2.0-flash" might not be a valid model. Using "gemini-1.5-flash" as a fallback (verify with Google AI docs).
+try:
+    model = genai.GenerativeModel("gemini-1.5-flash")
+except Exception as e:
+    st.error(f"Error initializing Gemini model: {str(e)}. Please check the model name.")
+    model = None
 
 # Load the config file for authentication
 with open('config.yaml') as file:
@@ -380,6 +387,8 @@ def save_input_output(input_type, input_data, output_data, directory_base="blog_
         f.write(output_data)
 
 def generate_blog_from_input(input_type, input_data, user_type, word_count=300):
+    if not model:
+        return "Error: Gemini model not initialized."
     try:
         if user_type == "Researchers":
             tone = "formal, detailed, and technical, focusing on in-depth analysis suitable for researchers"
@@ -430,25 +439,35 @@ def send_feedback_sms(feedback_text):
         st.error(f"Failed to send SMS feedback: {str(e)}")
         return False
 
-# Twilio SMS function for sharing blog post
+# Function to share blog post via email and copy to clipboard
 def render_share_button(blog_content):
-    st.subheader("Share Your Blog Post")
-    if st.button("Send via SMS", key="send_sms_btn"):
-        try:
-            client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
-            # Truncate to 1600 characters (SMS limit)
-            truncated_content = blog_content[:1600]
-            message = client.messages.create(
-                body=f"Check out my blog post:\n{truncated_content}",
-                from_=os.getenv("TWILIO_PHONE_NUMBER"),
-                to=os.getenv("USER_PHONE_NUMBER")
-            )
-            if message.sid:
-                st.success("Blog post sent via SMS!")
-            else:
-                st.error("Failed to send SMS.")
-        except Exception as e:
-            st.error(f"Error sending SMS: {str(e)}")
+    if not blog_content:
+        st.error("No blog content available to share!")
+        return
+
+    
+
+    # Copy to Clipboard
+    st.markdown("### Copy to Clipboard")
+    # Escape the blog content for JavaScript using json.dumps to handle special characters
+    escaped_content = json.dumps(blog_content)
+    
+    # Render an HTML button with JavaScript for copying to clipboard
+    clipboard_html = f"""
+    <button onclick="copyToClipboard()" class="share-btn">Copy to Clipboard</button>
+    <script>
+    function copyToClipboard() {{
+        const text = {escaped_content};
+        navigator.clipboard.writeText(text).then(function() {{
+            alert('Blog post copied to clipboard!');
+        }}, function(err) {{
+            alert('Failed to copy: ' + err);
+        }});
+    }}
+    </script>
+    """
+    components.html(clipboard_html, height=50)
+    st.info("Click the button above to copy the blog post to your clipboard.")
 
 # Initialize session state
 if 'authentication_status' not in st.session_state:
@@ -461,6 +480,8 @@ if 'blog_content' not in st.session_state:
     st.session_state.blog_content = ""
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "login"
+if 'user_type' not in st.session_state:
+    st.session_state.user_type = "Common Students"  # Default user type
 
 # Navigation logic
 query_params = st.query_params
@@ -567,15 +588,15 @@ if st.session_state.authentication_status:
     if st.sidebar.button("Logout", key="logout_btn"):
         logout()
 
+    # Sidebar user type selection
+    
+
 # Protect pages
 if not st.session_state.authentication_status and page not in ["login", "register"]:
     st.warning("Please log in to access this page.")
     st.session_state.current_page = "login"
     st.query_params["page"] = "login"
     st.rerun()
-
-# Sidebar user type selection
-
 
 # Landing Section
 if st.session_state.authentication_status and page == "home":
@@ -662,15 +683,17 @@ elif st.session_state.authentication_status and page == "text":
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    if page != "home":
+        st.markdown("### Options")
+        user_type = st.selectbox(
+            "Target Audience",
+            ["Researchers", "Common Students", "Data Scientists"],
+            index=["Researchers", "Common Students", "Data Scientists"].index(st.session_state.user_type),
+            key="sidebar_user_type"
+        )
+        st.session_state.user_type = user_type
     
-    if st.session_state.authentication_status and page != "home":
-        st.title("Options")
-        user_type = st.selectbox("Target Audience", ["Researchers", "Common Students", "Data Scientists"])
-    else:
-        user_type = None
-
-
-
     input_data = st.text_area("Blog Content", placeholder="Enter the text to inspire your blog post...", height=200)
     word_count = st.slider("Approximate Word Count", min_value=100, max_value=1000, value=300, step=50)
     
@@ -679,7 +702,7 @@ elif st.session_state.authentication_status and page == "text":
             st.error("Please provide text input!")
         else:
             st.markdown('<div class="spinner"><div></div><p style="color: #333333; margin-top: 10px;">Generating your blog post...</p></div>', unsafe_allow_html=True)
-            blog_content = generate_blog_from_input("Text", input_data, user_type, word_count)
+            blog_content = generate_blog_from_input("Text", input_data, st.session_state.user_type, word_count)
             st.session_state.blog_content = blog_content
             st.subheader("Generated Blog Post")
             if st.session_state.get('blog_content'):
@@ -731,13 +754,17 @@ elif st.session_state.authentication_status and page == "url":
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
-    if st.session_state.authentication_status and page != "home":
-        st.title("Options")
-        user_type = st.selectbox("Target Audience", ["Researchers", "Common Students", "Data Scientists"])
-    else:
-        user_type = None
 
+    if page != "home":
+        st.markdown("### Options")
+        user_type = st.selectbox(
+            "Target Audience",
+            ["Researchers", "Common Students", "Data Scientists"],
+            index=["Researchers", "Common Students", "Data Scientists"].index(st.session_state.user_type),
+            key="sidebar_user_type"
+        )
+        st.session_state.user_type = user_type
+    
     input_data = st.text_input("URL", placeholder="Enter a URL (e.g., webpage, YouTube video, or image URL)...")
     word_count = st.slider("Approximate Word Count", min_value=100, max_value=1000, value=300, step=50)
     
@@ -746,7 +773,7 @@ elif st.session_state.authentication_status and page == "url":
             st.error("Please provide a URL!")
         else:
             st.markdown('<div class="spinner"><div></div><p style="color: #333333; margin-top: 10px;">Generating your blog post...</p></div>', unsafe_allow_html=True)
-            blog_content = generate_blog_from_input("URL", input_data, user_type, word_count)
+            blog_content = generate_blog_from_input("URL", input_data, st.session_state.user_type, word_count)
             st.session_state.blog_content = blog_content
             st.subheader("Generated Blog Post")
             if st.session_state.get('blog_content'):
@@ -799,11 +826,15 @@ elif st.session_state.authentication_status and page == "image":
     </div>
     """, unsafe_allow_html=True)
 
-    if st.session_state.authentication_status and page != "home":
-        st.title("Options")
-        user_type = st.selectbox("Target Audience", ["Researchers", "Common Students", "Data Scientists"])
-    else:
-        user_type = None
+    if page != "home":
+        st.markdown("### Options")
+        user_type = st.selectbox(
+            "Target Audience",
+            ["Researchers", "Common Students", "Data Scientists"],
+            index=["Researchers", "Common Students", "Data Scientists"].index(st.session_state.user_type),
+            key="sidebar_user_type"
+        )
+        st.session_state.user_type = user_type
     
     input_data = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png", "gif"])
     word_count = st.slider("Approximate Word Count", min_value=100, max_value=1000, value=300, step=50)
@@ -813,7 +844,7 @@ elif st.session_state.authentication_status and page == "image":
             st.error("Please upload an image!")
         else:
             st.markdown('<div class="spinner"><div></div><p style="color: #333333; margin-top: 10px;">Generating your blog post...</p></div>', unsafe_allow_html=True)
-            blog_content = generate_blog_from_input("Image File", input_data, user_type, word_count)
+            blog_content = generate_blog_from_input("Image File", input_data, st.session_state.user_type, word_count)
             st.session_state.blog_content = blog_content
             st.subheader("Generated Blog Post")
             if st.session_state.get('blog_content'):
@@ -867,7 +898,11 @@ if st.session_state.authentication_status and page == "home":
 
 # Footer with Feedback Form
 if st.session_state.authentication_status:
-    
+    st.markdown("""
+    <div class="footer">
+        <div style="margin-bottom: 20px;">
+            <h3 style="color: #6C63FF;">Feedback</h3>
+    """, unsafe_allow_html=True)
     
     feedback_text = st.text_area(
         "Feedback",
@@ -886,13 +921,9 @@ if st.session_state.authentication_status:
         else:
             st.warning("Please enter feedback before submitting.")
     
-                
-    
-    
     st.markdown("""
-    <div class="footer">
-        <p>© 2025 Blog Generator | Powered by Streamlit & Google Gemini API</p>
-        <p><a href="#">Privacy Policy</a> | <a href="#">Terms of Service</a> | <a href="#">Contact Us</a></p>
-        <div style="margin-top: 20px;">
-            <h3 style="color: #6C63FF;">Feedback</h3>
+        </div>
+        <p style="text-align: center;">© 2025 Blog Generator | Powered by Streamlit & Google Gemini API</p>
+        <p style="text-align: center;"><a href="#">Privacy Policy</a> | <a href="#">Terms of Service</a> | <a href="#">Contact Us</a></p>
+    </div>
     """, unsafe_allow_html=True)
